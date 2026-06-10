@@ -1,10 +1,9 @@
 <?php
 
 use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\Exception;
 
-require '../vendor/autoload.php';
-require_once '../config/env.php';
+require_once __DIR__ . '/../vendor/autoload.php';
+require_once __DIR__ . '/../config/env.php';
 
 loadEnv(__DIR__ . '/../.env');
 
@@ -12,54 +11,52 @@ function sendOtpMail(
     string $toEmail,
     string $otp
 ): bool {
+    $host = trim((string) env('MAIL_HOST'));
+    $port = (int) env('MAIL_PORT', 587);
+    $from = trim((string) env('MAIL_FROM'));
+    $password = (string) preg_replace('/\s+/', '', (string) env('MAIL_PASSWORD'));
+    $fromName = trim((string) env('MAIL_FROM_NAME'));
+    $expireMinutes = (int) env('OTP_EXPIRE_MINUTES', 5);
+
+    if (
+        $host === ''
+        || $port < 1
+        || $port > 65535
+        || !filter_var($from, FILTER_VALIDATE_EMAIL)
+        || $password === ''
+        || $fromName === ''
+    ) {
+        error_log('SMTP configuration is missing or invalid.');
+        return false;
+    }
+
+    if (strcasecmp($host, 'smtp.gmail.com') === 0 && strlen($password) !== 16) {
+        error_log('Gmail SMTP requires a 16-character App Password.');
+        return false;
+    }
 
     $mail = new PHPMailer(true);
 
     try {
-
         $mail->isSMTP();
-
-        $mail->Host =
-            $_ENV['MAIL_HOST'];
-
+        $mail->Host = $host;
         $mail->SMTPAuth = true;
-
-        $mail->Username =
-            $_ENV['MAIL_FROM'];
-
-        $mail->Password =
-            $_ENV['MAIL_PASSWORD'];
-
-        $mail->SMTPSecure =
-            PHPMailer::ENCRYPTION_STARTTLS;
-
-        $mail->Port =
-            (int)$_ENV['MAIL_PORT'];
-
+        $mail->Username = $from;
+        $mail->Password = $password;
+        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->Port = $port;
         $mail->CharSet = 'UTF-8';
 
-        $mail->setFrom(
-            $_ENV['MAIL_FROM'],
-            $_ENV['MAIL_FROM_NAME']
-        );
-
+        $mail->setFrom($from, $fromName);
         $mail->addAddress($toEmail);
 
-        $mail->Subject =
-            'Mã OTP đặt lại mật khẩu TravelFood';
-
-        $mail->Body =
-            "Mã OTP của bạn là: $otp\n\n"
-            ."OTP có hiệu lực trong "
-            .$_ENV['OTP_EXPIRE_MINUTES']
-            ." phút.";
+        $mail->Subject = 'Mã OTP đặt lại mật khẩu TravelFood';
+        $mail->Body = "Mã OTP của bạn là: $otp\n\n"
+            . "OTP có hiệu lực trong $expireMinutes phút.";
 
         return $mail->send();
-
-    } catch (Exception $e) {
-
-        error_log($e->getMessage());
-
+    } catch (\Throwable $e) {
+        error_log('SMTP send failed: ' . $e->getMessage());
         return false;
     }
 }

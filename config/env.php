@@ -27,6 +27,21 @@ function loadEnv(string $path): void
         $key = trim($parts[0]);
         $value = trim($parts[1]);
 
+        if ($key === '' || getenv($key) !== false || array_key_exists($key, $_ENV)) {
+            continue;
+        }
+
+        $length = strlen($value);
+        if (
+            $length >= 2
+            && (
+                ($value[0] === '"' && $value[$length - 1] === '"')
+                || ($value[0] === "'" && $value[$length - 1] === "'")
+            )
+        ) {
+            $value = substr($value, 1, -1);
+        }
+
         $_ENV[$key] = $value;
         putenv("$key=$value");
     }
@@ -34,5 +49,11 @@ function loadEnv(string $path): void
 
 function env(string $key, $default = null)
 {
-    return $_ENV[$key] ?? getenv($key) ?: $default;
+    if (array_key_exists($key, $_ENV)) {
+        return $_ENV[$key];
+    }
+
+    $value = getenv($key);
+
+    return $value !== false ? $value : $default;
 }
