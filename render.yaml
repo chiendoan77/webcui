@@ -1,6 +1,0 @@
-services:
-  - type: web
-    name: travelfood-otp
-    runtime: php
-    buildCommand: composer install
-    startCommand: php -S 0.0.0.0:$PORT
