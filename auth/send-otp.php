@@ -2,8 +2,10 @@
 
 header("Content-Type: application/json; charset=UTF-8");
 
-require_once "../config/db.php";
-require_once "../utils/mail.php";
+require_once __DIR__ . "/../config/env.php";
+require_once __DIR__ . "/../utils/mail.php";
+
+loadEnv(__DIR__ . "/../.env");
 
 $data = json_decode(file_get_contents("php://input"), true);
 
@@ -17,40 +19,47 @@ if ($email === "") {
     exit;
 }
 
-$otp = random_int(100000, 999999);
-$expiredAt = date("Y-m-d H:i:s", time() + 5 * 60);
+$otpLength = (int) env("OTP_LENGTH", 6);
+$expireMinutes = (int) env("OTP_EXPIRE_MINUTES", 5);
 
-try {
-    $sql = "INSERT INTO password_otps (email, otp, expired_at, is_used)
-            VALUES (:email, :otp, :expired_at, 0)";
+$min = (int) str_pad("1", $otpLength, "0");
+$max = (int) str_repeat("9", $otpLength);
 
-    $stmt = $conn->prepare($sql);
+$otp = (string) random_int($min, $max);
 
-    $stmt->execute([
-        ":email" => $email,
-        ":otp" => $otp,
-        ":expired_at" => $expiredAt
-    ]);
+$otpDir = __DIR__ . "/../storage";
 
-    $sent = sendOtpMail($email, $otp);
+if (!is_dir($otpDir)) {
+    mkdir($otpDir, 0777, true);
+}
 
-    if (!$sent) {
-        echo json_encode([
-            "success" => false,
-            "message" => "Không gửi được email OTP"
-        ]);
-        exit;
-    }
+$file = $otpDir . "/otps.json";
 
-    echo json_encode([
-        "success" => true,
-        "message" => "Đã gửi OTP về email"
-    ]);
+$otps = [];
 
-} catch (Exception $e) {
+if (file_exists($file)) {
+    $content = file_get_contents($file);
+    $otps = json_decode($content, true) ?: [];
+}
+
+$otps[$email] = [
+    "otp" => $otp,
+    "expired_at" => time() + ($expireMinutes * 60)
+];
+
+file_put_contents($file, json_encode($otps));
+
+$sent = sendOtpMail($email, $otp);
+
+if (!$sent) {
     echo json_encode([
         "success" => false,
-        "message" => "Lỗi gửi OTP",
-        "error" => $e->getMessage()
+        "message" => "Không gửi được email OTP"
     ]);
+    exit;
 }
+
+echo json_encode([
+    "success" => true,
+    "message" => "Đã gửi OTP về email"
+]);
