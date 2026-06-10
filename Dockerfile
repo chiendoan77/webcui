@@ -4,7 +4,8 @@ RUN apt-get update && apt-get install -y \
     ca-certificates \
     git \
     unzip \
-    && rm -rf /var/lib/apt/lists/*
+    && rm -rf /var/lib/apt/lists/* \
+    && echo "ServerName localhost" >> /etc/apache2/apache2.conf
 
 COPY --from=composer:latest /usr/bin/composer /usr/bin/composer
 
