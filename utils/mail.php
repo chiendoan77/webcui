@@ -1,8 +1,5 @@
 <?php
 
-use PHPMailer\PHPMailer\PHPMailer;
-use PHPMailer\PHPMailer\SMTP;
-
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/env.php';
 
@@ -12,81 +9,42 @@ function sendOtpMail(
     string $toEmail,
     string $otp
 ): bool {
-    $host = trim((string) env('MAIL_HOST'));
-    $port = (int) env('MAIL_PORT', 587);
-    $encryption = strtolower(trim((string) env('MAIL_ENCRYPTION', 'tls')));
-    $timeout = (int) env('MAIL_TIMEOUT', 15);
-    $debugEnabled = filter_var(
-        env('MAIL_DEBUG', false),
-        FILTER_VALIDATE_BOOLEAN
-    );
-    $from = trim((string) env('MAIL_FROM'));
-    $password = (string) preg_replace('/\s+/', '', (string) env('MAIL_PASSWORD'));
-    $fromName = trim((string) env('MAIL_FROM_NAME'));
+    $apiKey = trim((string) env('RESEND_API_KEY'));
+    $from = trim((string) env(
+        'RESEND_FROM',
+        'TravelFood <onboarding@resend.dev>'
+    ));
     $expireMinutes = (int) env('OTP_EXPIRE_MINUTES', 5);
 
     if (
-        $host === ''
-        || $port < 1
-        || $port > 65535
-        || !in_array($encryption, ['tls', 'ssl'], true)
-        || $timeout < 1
-        || $timeout > 120
-        || !filter_var($from, FILTER_VALIDATE_EMAIL)
-        || $password === ''
-        || $fromName === ''
+        !str_starts_with($apiKey, 're_')
+        || $from === ''
+        || !filter_var($toEmail, FILTER_VALIDATE_EMAIL)
+        || $expireMinutes < 1
     ) {
-        error_log('SMTP configuration is missing or invalid.');
+        error_log('Resend configuration or recipient email is invalid.');
         return false;
     }
-
-    if (strcasecmp($host, 'smtp.gmail.com') === 0 && strlen($password) !== 16) {
-        error_log('Gmail SMTP requires a 16-character App Password.');
-        return false;
-    }
-
-    $mail = new PHPMailer(true);
 
     try {
-        $mail->isSMTP();
-        $mail->Host = $host;
-        $mail->SMTPAuth = true;
-        $mail->Username = $from;
-        $mail->Password = $password;
-        $mail->SMTPSecure = $encryption === 'ssl'
-            ? PHPMailer::ENCRYPTION_SMTPS
-            : PHPMailer::ENCRYPTION_STARTTLS;
-        $mail->Port = $port;
-        $mail->Timeout = $timeout;
-        $mail->CharSet = 'UTF-8';
+        $resend = Resend::client($apiKey);
+        $resend->emails->send([
+            'from' => $from,
+            'to' => [$toEmail],
+            'subject' => 'Mã OTP đặt lại mật khẩu TravelFood',
+            'html' => sprintf(
+                '<p>Mã OTP của bạn là: <strong>%s</strong></p>'
+                . '<p>OTP có hiệu lực trong %d phút.</p>',
+                htmlspecialchars($otp, ENT_QUOTES, 'UTF-8'),
+                $expireMinutes
+            ),
+            'text' => "Mã OTP của bạn là: $otp\n\n"
+                . "OTP có hiệu lực trong $expireMinutes phút.",
+        ]);
 
-        if ($debugEnabled) {
-            $mail->SMTPDebug = SMTP::DEBUG_CONNECTION;
-            $mail->Debugoutput = static function (string $message, int $level): void {
-                error_log(sprintf(
-                    'SMTP debug [%d]: %s',
-                    $level,
-                    trim($message)
-                ));
-            };
-        }
-
-        $mail->setFrom($from, $fromName);
-        $mail->addAddress($toEmail);
-
-        $mail->Subject = 'Mã OTP đặt lại mật khẩu TravelFood';
-        $mail->Body = "Mã OTP của bạn là: $otp\n\n"
-            . "OTP có hiệu lực trong $expireMinutes phút.";
-
-        return $mail->send();
+        return true;
     } catch (\Throwable $e) {
-        error_log(sprintf(
-            'SMTP send failed (%s:%d, %s): %s',
-            $host,
-            $port,
-            $encryption,
-            $e->getMessage()
-        ));
+        error_log('Resend send failed: ' . $e->getMessage());
         return false;
     }
 }
