@@ -1,6 +1,7 @@
 <?php
 
 use PHPMailer\PHPMailer\PHPMailer;
+use PHPMailer\PHPMailer\SMTP;
 
 require_once __DIR__ . '/../vendor/autoload.php';
 require_once __DIR__ . '/../config/env.php';
@@ -13,6 +14,12 @@ function sendOtpMail(
 ): bool {
     $host = trim((string) env('MAIL_HOST'));
     $port = (int) env('MAIL_PORT', 587);
+    $encryption = strtolower(trim((string) env('MAIL_ENCRYPTION', 'tls')));
+    $timeout = (int) env('MAIL_TIMEOUT', 15);
+    $debugEnabled = filter_var(
+        env('MAIL_DEBUG', false),
+        FILTER_VALIDATE_BOOLEAN
+    );
     $from = trim((string) env('MAIL_FROM'));
     $password = (string) preg_replace('/\s+/', '', (string) env('MAIL_PASSWORD'));
     $fromName = trim((string) env('MAIL_FROM_NAME'));
@@ -22,6 +29,9 @@ function sendOtpMail(
         $host === ''
         || $port < 1
         || $port > 65535
+        || !in_array($encryption, ['tls', 'ssl'], true)
+        || $timeout < 1
+        || $timeout > 120
         || !filter_var($from, FILTER_VALIDATE_EMAIL)
         || $password === ''
         || $fromName === ''
@@ -43,9 +53,23 @@ function sendOtpMail(
         $mail->SMTPAuth = true;
         $mail->Username = $from;
         $mail->Password = $password;
-        $mail->SMTPSecure = PHPMailer::ENCRYPTION_STARTTLS;
+        $mail->SMTPSecure = $encryption === 'ssl'
+            ? PHPMailer::ENCRYPTION_SMTPS
+            : PHPMailer::ENCRYPTION_STARTTLS;
         $mail->Port = $port;
+        $mail->Timeout = $timeout;
         $mail->CharSet = 'UTF-8';
+
+        if ($debugEnabled) {
+            $mail->SMTPDebug = SMTP::DEBUG_CONNECTION;
+            $mail->Debugoutput = static function (string $message, int $level): void {
+                error_log(sprintf(
+                    'SMTP debug [%d]: %s',
+                    $level,
+                    trim($message)
+                ));
+            };
+        }
 
         $mail->setFrom($from, $fromName);
         $mail->addAddress($toEmail);
@@ -56,7 +80,13 @@ function sendOtpMail(
 
         return $mail->send();
     } catch (\Throwable $e) {
-        error_log('SMTP send failed: ' . $e->getMessage());
+        error_log(sprintf(
+            'SMTP send failed (%s:%d, %s): %s',
+            $host,
+            $port,
+            $encryption,
+            $e->getMessage()
+        ));
         return false;
     }
 }
